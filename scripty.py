@@ -1,12 +1,11 @@
 from odf.opendocument import load
 from odf.text import P
 from odf.table import Table, TableRow, TableCell
+from odf.element import Element
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
 import re
-from odf.element import Element
-
 
 # ---------------- utilidades ----------------
 def data_para_nome_br(d: datetime) -> str:
@@ -24,13 +23,13 @@ def achar_arquivo_escala(pasta: str, data_ref: datetime) -> Path | None:
 def extrair_texto(elem) -> str:
     txt = []
     for n in elem.childNodes:
-        if n.nodeType == 3:                      # TEXT_NODE
+        if n.nodeType == 3:  # TEXT_NODE
             txt.append(n.data)
         elif hasattr(n, "childNodes"):
             txt.append(extrair_texto(n))
     return "".join(txt)
 
-# ------------ configuração de cargos ------------
+# ------------ configuração de cargos corrigida ------------
 cargos_para_placeholder = {
     "SGT_DE_DIA"        : "SGT DE DIA",
     "SGT_PERMANENCIA"   : "SGT PERMANÊNCIA",
@@ -40,16 +39,13 @@ cargos_para_placeholder = {
     "PLANTAO_2"         : "PLANTÕES SU",
     "PLANTAO_3"         : "PLANTÕES SU",
 
-    "GDA_QTL_1"         : "GDA QTL 02",
-    "GDA_QTL_2"         : "GDA QTL 02",
-
     "MOTORISTA"         : "MOTORISTA DE DIA",
 
-    "PERMANENCIA_ENFER" : "PERMANÊNCIA ENFERMARIA",   # nome “correto”
-    "PERMANECIA_ENFERMARIA": "PERMANÊNCIA ENFERMARIA",# placeholder com typo no modelo
+    "PERMANENCIA_ENFER" : "PERMANÊNCIA ENFERMARIA",
 
-    "SENTINELA"         : "GDA QTL 02",               # para ambos {{SENTINELA}}
-    "SENTINELA_1"       : "FAX PAVILHAO"              # caso ainda queira usar
+    # Dois sentinelas, ambos com mesmo nome na escala "GDA QTL 02"
+    "SENTINELA_1"       : "GDA QTL 02",
+    "SENTINELA_2"       : "GDA QTL 02",
 }
 
 # ------------ coleta de nomes da escala ------------
@@ -82,16 +78,16 @@ mapa_funcoes = {}
 
 for chave, nome_cargo in cargos_para_placeholder.items():
     nomes = nomes_por_funcao.get(nome_cargo, [])
-    # Se houver cargos duplicados (PLANTAO_1, PLANTAO_2 …) decide índice
     chaves_mesmo_cargo = [k for k,v in cargos_para_placeholder.items() if v == nome_cargo]
     idx = chaves_mesmo_cargo.index(chave) if chave in chaves_mesmo_cargo else 0
     mapa_funcoes[chave] = nomes[idx] if idx < len(nomes) else "----------"
 
 # Datas para o modelo
 mapa_funcoes["DATA_DE_HOJE"] = f"{ontem.day:02d}"
-mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(ontem).split()[1].capitalize()
+mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(ontem).split()[1].capitalize().upper()
+mapa_funcoes["MES_DE_HJ_n"]    = data_para_nome_br(ontem).split()[1].capitalize()
 
-# ------------ substituição de placeholders ----------
+# ------------ substituição de placeholders ------------
 def substituir_placeholders(doc, dados):
     from odf.text import Span
 
