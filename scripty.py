@@ -43,7 +43,6 @@ cargos_para_placeholder = {
 
     "PERMANENCIA_ENFER" : "PERMANÊNCIA ENFERMARIA",
 
-    # Dois sentinelas, ambos com mesmo nome na escala "GDA QTL 02"
     "SENTINELA_1"       : "GDA QTL 02",
     "SENTINELA_2"       : "GDA QTL 02",
 }
@@ -80,12 +79,20 @@ for chave, nome_cargo in cargos_para_placeholder.items():
     nomes = nomes_por_funcao.get(nome_cargo, [])
     chaves_mesmo_cargo = [k for k,v in cargos_para_placeholder.items() if v == nome_cargo]
     idx = chaves_mesmo_cargo.index(chave) if chave in chaves_mesmo_cargo else 0
-    mapa_funcoes[chave] = nomes[idx] if idx < len(nomes) else "----------"
+
+    if idx < len(nomes):
+        nome_puro = nomes[idx].strip()
+        # Corrige duplicação do texto "PERMANÊNCIA ENFERMARIA"
+        if chave == "PERMANENCIA_ENFER":
+            nome_puro = re.sub(r"^PERMAN[ÊE]NCIA ENFERMARIA[:\- ]*", "", nome_puro, flags=re.I).strip()
+        mapa_funcoes[chave] = nome_puro
+    else:
+        mapa_funcoes[chave] = ""
 
 # Datas para o modelo
-mapa_funcoes["DATA_DE_HOJE"] = f"{ontem.day:02d}"
-mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(ontem).split()[1].capitalize().upper()
-mapa_funcoes["MES_DE_HJ_n"]    = data_para_nome_br(ontem).split()[1].capitalize()
+mapa_funcoes["DATA_DE_HOJE"] = f"{hoje.day:02d}"
+mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(hoje).split()[1].capitalize().upper()
+mapa_funcoes["MES_DE_HJ_n"]  = data_para_nome_br(hoje).split()[1].capitalize()
 
 # ------------ substituição de placeholders ------------
 def substituir_placeholders(doc, dados):
