@@ -130,7 +130,7 @@ modelo = load("modelo_pernoite.odt")
 substituir_placeholders(modelo, mapa_funcoes)
 
 Path("pernoites").mkdir(exist_ok=True)
-nome_saida = f"pernoite_{data_para_nome_br(ontem).replace(' ','_')}.odt"
+nome_saida = f"pernoite_{data_para_nome_br(hoje).replace(' ','_')}.odt"
 modelo.save(Path("pernoites") / nome_saida)
 
 print("✅ Pernoite gerado em:", Path('pernoites') / nome_saida)
