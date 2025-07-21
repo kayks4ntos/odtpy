@@ -5,6 +5,7 @@ from odf.element import Element
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
+from odf.text import LineBreak
 import re
 
 # ---------------- utilidades ----------------
@@ -29,25 +30,31 @@ def extrair_texto(elem) -> str:
             txt.append(extrair_texto(n))
     return "".join(txt)
 
-# ------------ configuração de cargos corrigida ------------
-cargos_para_placeholder = {
-    "SGT_DE_DIA"        : "SGT DE DIA",
-    "SGT_PERMANENCIA"   : "SGT PERMANÊNCIA",
-    "CB_DE_DIA"         : "CB DE DIA SU",
+# ------------ configuração de cargos ------------
 
+cargos_para_placeholder = {
+    # GUARNIÇÃO INTERNA
+    "SGT_DE_DIA"        : "SGT DE DIA",
+    "CB_DE_DIA"         : "CB DE DIA SU",
     "PLANTAO_1"         : "PLANTÕES SU",
     "PLANTAO_2"         : "PLANTÕES SU",
     "PLANTAO_3"         : "PLANTÕES SU",
 
+    # GUARNIÇÃO EXTERNA
     "MOTORISTA"         : "MOTORISTA DE DIA",
-
     "PERMANENCIA_ENFER" : "PERMANÊNCIA ENFERMARIA",
-
     "SENTINELA_1"       : "GDA QTL 02",
     "SENTINELA_2"       : "GDA QTL 02",
+
+    "OFICIAL_DE_DIA"    : "OFICIAL DE DIA",
+    "ADJUNTO"           : "ADJUNTO",
+    "CMT_GDA"           : "CMT DA GDA",
+    "CB_GDA_I"          : "CB DA GDA I",
+    "CB_GDA_II"         : "CB DA GDA II"
 }
 
 # ------------ coleta de nomes da escala ------------
+
 hoje  = datetime.today()
 ontem = hoje - timedelta(days=1)
 
@@ -73,6 +80,7 @@ for tabela in docADT.getElementsByType(Table):
                         nomes_por_funcao[nome_cargo].append(nome)
 
 # ------------ monta mapa_funcoes -------------------
+
 mapa_funcoes = {}
 
 for chave, nome_cargo in cargos_para_placeholder.items():
@@ -82,57 +90,104 @@ for chave, nome_cargo in cargos_para_placeholder.items():
 
     if idx < len(nomes):
         nome_puro = nomes[idx].strip()
-        # Corrige duplicação do texto "PERMANÊNCIA ENFERMARIA"
         if chave == "PERMANENCIA_ENFER":
             nome_puro = re.sub(r"^PERMAN[ÊE]NCIA ENFERMARIA[:\- ]*", "", nome_puro, flags=re.I).strip()
         mapa_funcoes[chave] = nome_puro
     else:
         mapa_funcoes[chave] = ""
 
-# Datas para o modelo
+# ------------ datas do documento -------------------
+
 mapa_funcoes["DATA_DE_HOJE"] = f"{hoje.day:02d}"
 mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(hoje).split()[1].capitalize().upper()
 mapa_funcoes["MES_DE_HJ_n"]  = data_para_nome_br(hoje).split()[1].capitalize()
 
-# ------------ substituição de placeholders ------------
+# ------------ cálculo automático de somas ----------
+# ------------ placeholders vazios como traço ("-") para funções da Gu Externa -----------
+
+for k in ["OFICIAL_DE_DIA", "ADJUNTO", "CMT_GDA", "CB_GDA_I", "CB_GDA_II"]:
+    if not mapa_funcoes.get(k):
+        mapa_funcoes[k] = "-"
+# ------------ formatação especial para exibir CBs da GDA em linha separada ------------
+
+cb_gda_i = mapa_funcoes["CB_GDA_I"]
+cb_gda_ii = mapa_funcoes["CB_GDA_II"]
+
+if cb_gda_i != "-" and cb_gda_ii != "-":
+    mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA I: {cb_gda_i}\n  CB DA GDA II: {cb_gda_ii}"
+elif cb_gda_i != "-":
+    mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA I: {cb_gda_i}"
+elif cb_gda_ii != "-":
+    mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA II: {cb_gda_ii}"
+else:
+    mapa_funcoes["CB_GUARNICAO"] = "-"
+# Guarnição Interna
+soma_internos = {
+    "SGT": 1 if mapa_funcoes["SGT_DE_DIA"] else 0,
+    "CB":  1 if mapa_funcoes["CB_DE_DIA"] else 0,
+    "SOLDADO": sum(1 for k in ["PLANTAO_1", "PLANTAO_2", "PLANTAO_3"] if mapa_funcoes.get(k))
+}
+mapa_funcoes["SOMA_SGT_INT"] = str(soma_internos["SGT"])
+mapa_funcoes["SOMA_CB_INT"] = str(soma_internos["CB"])
+mapa_funcoes["SD_INT"] = str(soma_internos["SOLDADO"])
+mapa_funcoes["SOMA_TOTAL_INT"] = str(sum(soma_internos.values()))
+
+# Guarnição Externa
+soma_externos = {
+    "OF": int(bool(mapa_funcoes.get("OFICIAL_DE_DIA"))),
+    "SGT": sum(1 for k in ["ADJUNTO", "CMT_GDA"] if mapa_funcoes.get(k)),
+    "CB": sum(1 for k in ["CB_GDA_I", "CB_GDA_II"] if mapa_funcoes.get(k)),
+    "SOLDADO": sum(1 for k in ["MOTORISTA", "PERMANENCIA_ENFER", "SENTINELA_1", "SENTINELA_2"] if mapa_funcoes.get(k))
+}
+
+# Adicionar ao mapa para o modelo
+mapa_funcoes["SOMA_OF"] = str(soma_externos["OF"])
+mapa_funcoes["SOMA_SGT"] = str(soma_externos["SGT"])
+mapa_funcoes["SOMA_CB"] = str(soma_externos["CB"])
+mapa_funcoes["SD"] = str(soma_externos["SOLDADO"])
+mapa_funcoes["SOMA_TOTAL"] = str(sum(soma_externos.values()))
+# Total Geral
+total_geral = sum(soma_internos.values()) + sum(soma_externos.values())
+mapa_funcoes["TOTAL_GERAL"] = str(total_geral)
+
+# ------------ substituição de placeholders ----------
+
 def substituir_placeholders(doc, dados):
     from odf.text import Span
 
-    # Substitui em parágrafos
     for p in doc.getElementsByType(P):
         texto = extrair_texto(p)
         if not texto:
             continue
-
         novo_texto = texto
         for k, v in dados.items():
             novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
-
         if novo_texto != texto:
             filhos = [child for child in p.childNodes if isinstance(child, Element)]
             for child in filhos:
                 p.removeChild(child)
             p.addText(novo_texto)
 
-    # Substitui em células de tabela
     for cell in doc.getElementsByType(TableCell):
         texto = extrair_texto(cell)
         if not texto:
             continue
-
         novo_texto = texto
         for k, v in dados.items():
             novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
-
         if novo_texto != texto:
             filhos = [child for child in cell.childNodes if isinstance(child, Element)]
             for child in filhos:
                 cell.removeChild(child)
             novo_p = P()
-            novo_p.addText(novo_texto)
+            for part in novo_texto.split("\n"):
+                novo_p.addText(part)
+                novo_p.addElement(LineBreak())
             cell.addElement(novo_p)
 
-# ------------ aplica modelo e salva ----------------
+
+# ------------ aplica modelo e salva ------------------
+
 modelo = load("modelo_pernoite.odt")
 substituir_placeholders(modelo, mapa_funcoes)
 
