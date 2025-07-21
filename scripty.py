@@ -1,11 +1,10 @@
 from odf.opendocument import load
-from odf.text import P
+from odf.text import P, LineBreak
 from odf.table import Table, TableRow, TableCell
 from odf.element import Element
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
-from odf.text import LineBreak
 import re
 
 # ---------------- utilidades ----------------
@@ -102,26 +101,28 @@ mapa_funcoes["DATA_DE_HOJE"] = f"{hoje.day:02d}"
 mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(hoje).split()[1].capitalize().upper()
 mapa_funcoes["MES_DE_HJ_n"]  = data_para_nome_br(hoje).split()[1].capitalize()
 
-# ------------ cálculo automático de somas ----------
-# ------------ placeholders vazios como traço ("-") para funções da Gu Externa -----------
+# ------------ placeholders vazios como "–" -----------
 
 for k in ["OFICIAL_DE_DIA", "ADJUNTO", "CMT_GDA", "CB_GDA_I", "CB_GDA_II"]:
     if not mapa_funcoes.get(k):
-        mapa_funcoes[k] = "-"
-# ------------ formatação especial para exibir CBs da GDA em linha separada ------------
+        mapa_funcoes[k] = "–"
+
+# ------------ formatação especial para CBs da GDA ------------
 
 cb_gda_i = mapa_funcoes["CB_GDA_I"]
 cb_gda_ii = mapa_funcoes["CB_GDA_II"]
 
-if cb_gda_i != "-" and cb_gda_ii != "-":
+if cb_gda_i != "–" and cb_gda_ii != "–":
     mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA I: {cb_gda_i}\n  CB DA GDA II: {cb_gda_ii}"
-elif cb_gda_i != "-":
+elif cb_gda_i != "–":
     mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA I: {cb_gda_i}"
-elif cb_gda_ii != "-":
+elif cb_gda_ii != "–":
     mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA II: {cb_gda_ii}"
 else:
-    mapa_funcoes["CB_GUARNICAO"] = "-"
-# Guarnição Interna
+    mapa_funcoes["CB_GUARNICAO"] = "–"
+
+# ------------ Guarnição Interna ------------
+
 soma_internos = {
     "SGT": 1 if mapa_funcoes["SGT_DE_DIA"] else 0,
     "CB":  1 if mapa_funcoes["CB_DE_DIA"] else 0,
@@ -132,29 +133,27 @@ mapa_funcoes["SOMA_CB_INT"] = str(soma_internos["CB"])
 mapa_funcoes["SD_INT"] = str(soma_internos["SOLDADO"])
 mapa_funcoes["SOMA_TOTAL_INT"] = str(sum(soma_internos.values()))
 
-# Guarnição Externa
-soma_externos = {
-    "OF": int(bool(mapa_funcoes.get("OFICIAL_DE_DIA"))),
-    "SGT": sum(1 for k in ["ADJUNTO", "CMT_GDA"] if mapa_funcoes.get(k)),
-    "CB": sum(1 for k in ["CB_GDA_I", "CB_GDA_II"] if mapa_funcoes.get(k)),
-    "SOLDADO": sum(1 for k in ["MOTORISTA", "PERMANENCIA_ENFER", "SENTINELA_1", "SENTINELA_2"] if mapa_funcoes.get(k))
-}
+# ------------ Guarnição Externa ------------
 
-# Adicionar ao mapa para o modelo
+soma_externos = {
+    "OF": int(mapa_funcoes.get("OFICIAL_DE_DIA") not in ["", "–"]),
+    "SGT": sum(1 for k in ["ADJUNTO", "CMT_GDA"] if mapa_funcoes.get(k) not in ["", "–"]),
+    "CB": sum(1 for k in ["CB_GDA_I", "CB_GDA_II"] if mapa_funcoes.get(k) not in ["", "–"]),
+    "SOLDADO": sum(1 for k in ["MOTORISTA", "PERMANENCIA_ENFER", "SENTINELA_1", "SENTINELA_2"] if mapa_funcoes.get(k) not in ["", "–"])
+}
 mapa_funcoes["SOMA_OF"] = str(soma_externos["OF"])
 mapa_funcoes["SOMA_SGT"] = str(soma_externos["SGT"])
 mapa_funcoes["SOMA_CB"] = str(soma_externos["CB"])
 mapa_funcoes["SD"] = str(soma_externos["SOLDADO"])
 mapa_funcoes["SOMA_TOTAL"] = str(sum(soma_externos.values()))
-# Total Geral
+
+# ------------ Total Geral ------------
 total_geral = sum(soma_internos.values()) + sum(soma_externos.values())
 mapa_funcoes["TOTAL_GERAL"] = str(total_geral)
 
-# ------------ substituição de placeholders ----------
+# ------------ substituição de placeholders ------------
 
 def substituir_placeholders(doc, dados):
-    from odf.text import Span
-
     for p in doc.getElementsByType(P):
         texto = extrair_texto(p)
         if not texto:
@@ -185,8 +184,7 @@ def substituir_placeholders(doc, dados):
                 novo_p.addElement(LineBreak())
             cell.addElement(novo_p)
 
-
-# ------------ aplica modelo e salva ------------------
+# ------------ aplica modelo e salva ------------
 
 modelo = load("modelo_pernoite.odt")
 substituir_placeholders(modelo, mapa_funcoes)
@@ -195,4 +193,4 @@ Path("pernoites").mkdir(exist_ok=True)
 nome_saida = f"pernoite_{data_para_nome_br(hoje).replace(' ','_')}.odt"
 modelo.save(Path("pernoites") / nome_saida)
 
-print("✅ Pernoite gerado em:", Path('pernoites') / nome_saida)
+print("✅ Pernoite gerado em:", Path("pernoites") / nome_saida)
