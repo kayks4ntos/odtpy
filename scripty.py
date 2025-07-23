@@ -5,6 +5,7 @@ from odf.element import Element
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
+from odf.style import Style, ParagraphProperties
 import re
 
 # ---------------- utilidades ----------------
@@ -32,14 +33,12 @@ def extrair_texto(elem) -> str:
 # ------------ configuração de cargos ------------
 
 cargos_para_placeholder = {
-    # GUARNIÇÃO INTERNA
     "SGT_DE_DIA"        : "SGT DE DIA",
     "CB_DE_DIA"         : "CB DE DIA SU",
     "PLANTAO_1"         : "PLANTÕES SU",
     "PLANTAO_2"         : "PLANTÕES SU",
     "PLANTAO_3"         : "PLANTÕES SU",
 
-    # GUARNIÇÃO EXTERNA
     "MOTORISTA"         : "MOTORISTA DE DIA",
     "PERMANENCIA_ENFER" : "PERMANÊNCIA ENFERMARIA",
     "SENTINELA_1"       : "GDA QTL 02",
@@ -91,6 +90,13 @@ for chave, nome_cargo in cargos_para_placeholder.items():
         nome_puro = nomes[idx].strip()
         if chave == "PERMANENCIA_ENFER":
             nome_puro = re.sub(r"^PERMAN[ÊE]NCIA ENFERMARIA[:\- ]*", "", nome_puro, flags=re.I).strip()
+
+        # Adiciona função explícita para sargentos externos
+        if chave == "ADJUNTO" and nome_puro:
+            nome_puro = f"ADJUNTO: {nome_puro}"
+        if chave == "CMT_GDA" and nome_puro:
+            nome_puro = f"CMT DA GUARDA: {nome_puro}"
+
         mapa_funcoes[chave] = nome_puro
     else:
         mapa_funcoes[chave] = ""
@@ -112,14 +118,13 @@ for k in ["OFICIAL_DE_DIA", "ADJUNTO", "CMT_GDA", "CB_GDA_I", "CB_GDA_II"]:
 cb_gda_i = mapa_funcoes["CB_GDA_I"]
 cb_gda_ii = mapa_funcoes["CB_GDA_II"]
 
-if cb_gda_i != "–" and cb_gda_ii != "–":
-    mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA I: {cb_gda_i}\n  CB DA GDA II: {cb_gda_ii}"
-elif cb_gda_i != "–":
-    mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA I: {cb_gda_i}"
-elif cb_gda_ii != "–":
-    mapa_funcoes["CB_GUARNICAO"] = f"- CB DA GDA II: {cb_gda_ii}"
-else:
-    mapa_funcoes["CB_GUARNICAO"] = "–"
+cb_lines = []
+if cb_gda_i != "–":
+    cb_lines.append(f"- CB DA GDA I: {cb_gda_i}")
+if cb_gda_ii != "–":
+    cb_lines.append(f"- CB DA GDA II: {cb_gda_ii}")
+
+mapa_funcoes["CB_GUARNICAO"] = "\n  ".join(cb_lines) if cb_lines else "–"
 
 # ------------ Guarnição Interna ------------
 
@@ -128,10 +133,10 @@ soma_internos = {
     "CB":  1 if mapa_funcoes["CB_DE_DIA"] else 0,
     "SOLDADO": sum(1 for k in ["PLANTAO_1", "PLANTAO_2", "PLANTAO_3"] if mapa_funcoes.get(k))
 }
-mapa_funcoes["SOMA_SGT_INT"] = str(soma_internos["SGT"])
-mapa_funcoes["SOMA_CB_INT"] = str(soma_internos["CB"])
-mapa_funcoes["SD_INT"] = str(soma_internos["SOLDADO"])
-mapa_funcoes["SOMA_TOTAL_INT"] = str(sum(soma_internos.values()))
+mapa_funcoes["SOMA_SGT_INT"] = f"{soma_internos['SGT']:02d}"
+mapa_funcoes["SOMA_CB_INT"] = f"{soma_internos['CB']:02d}"
+mapa_funcoes["SD_INT"] = f"{soma_internos['SOLDADO']:02d}"
+mapa_funcoes["SOMA_TOTAL_INT"] = f"{sum(soma_internos.values()):02d}"
 
 # ------------ Guarnição Externa ------------
 
@@ -141,25 +146,45 @@ soma_externos = {
     "CB": sum(1 for k in ["CB_GDA_I", "CB_GDA_II"] if mapa_funcoes.get(k) not in ["", "–"]),
     "SOLDADO": sum(1 for k in ["MOTORISTA", "PERMANENCIA_ENFER", "SENTINELA_1", "SENTINELA_2"] if mapa_funcoes.get(k) not in ["", "–"])
 }
-mapa_funcoes["SOMA_OF"] = str(soma_externos["OF"])
-mapa_funcoes["SOMA_SGT"] = str(soma_externos["SGT"])
-mapa_funcoes["SOMA_CB"] = str(soma_externos["CB"])
-mapa_funcoes["SD"] = str(soma_externos["SOLDADO"])
-mapa_funcoes["SOMA_TOTAL"] = str(sum(soma_externos.values()))
+mapa_funcoes["SOMA_OF"] = f"{soma_externos['OF']:02d}"
+mapa_funcoes["SOMA_SGT"] = f"{soma_externos['SGT']:02d}"
+mapa_funcoes["SOMA_CB"] = f"{soma_externos['CB']:02d}"
+mapa_funcoes["SD"] = f"{soma_externos['SOLDADO']:02d}"
+mapa_funcoes["SOMA_TOTAL"] = f"{sum(soma_externos.values()):02d}"
 
 # ------------ Total Geral ------------
+
 total_geral = sum(soma_internos.values()) + sum(soma_externos.values())
-mapa_funcoes["TOTAL_GERAL"] = str(total_geral)
+mapa_funcoes["TOTAL_GERAL"] = f"{total_geral:02d}"
 
 # ------------ substituição de placeholders ------------
 
 def substituir_placeholders(doc, dados):
+    # Cria estilo centralizado para valores vazios (hífen)
+    estilo_centralizado = Style(name="Centralizado", family="paragraph")
+    estilo_centralizado.addElement(ParagraphProperties(textalign="center"))
+    doc.styles.addElement(estilo_centralizado)
+
+    # Chaves que podem conter hífen e que devem ser centralizadas se for "–"
+    chaves_para_centralizar_se_hifen = {
+        "OFICIAL_DE_DIA", "ADJUNTO", "CMT_GDA", "CB_GDA_I", "CB_GDA_II", "CB_GUARNICAO"
+    }
+
+    # Chaves que sempre devem ser centralizadas (valores numéricos como somas)
+    chaves_somas = {
+        "SOMA_SGT_INT", "SOMA_CB_INT", "SD_INT", "SOMA_TOTAL_INT",
+        "SOMA_OF", "SOMA_SGT", "SOMA_CB", "SD", "SOMA_TOTAL",
+        "TOTAL_GERAL"
+    }
+
+    # Substituição nos parágrafos comuns
     for p in doc.getElementsByType(P):
         texto = extrair_texto(p)
         if not texto:
             continue
         novo_texto = texto
         for k, v in dados.items():
+            v = v.strip().rstrip('-').strip()  # Remove hífen ao final se houver
             novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
         if novo_texto != texto:
             filhos = [child for child in p.childNodes if isinstance(child, Element)]
@@ -167,23 +192,39 @@ def substituir_placeholders(doc, dados):
                 p.removeChild(child)
             p.addText(novo_texto)
 
+    # Substituição nas células da tabela
     for cell in doc.getElementsByType(TableCell):
         texto = extrair_texto(cell)
         if not texto:
             continue
         novo_texto = texto
+        estilo_para_usar = None
+
         for k, v in dados.items():
-            novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
+            v = v.strip().rstrip('-').strip()
+            if f"{{{{{k}}}}}" in novo_texto:
+                novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
+
+                # Centraliza apenas se for valor "–" e a chave está nas permitidas
+                if v == "–" and k in chaves_para_centralizar_se_hifen:
+                    estilo_para_usar = estilo_centralizado
+
+                # Sempre centraliza se for uma soma
+                elif k in chaves_somas:
+                    estilo_para_usar = estilo_centralizado
+
         if novo_texto != texto:
             filhos = [child for child in cell.childNodes if isinstance(child, Element)]
             for child in filhos:
                 cell.removeChild(child)
-            novo_p = P()
-            for part in novo_texto.split("\n"):
-                novo_p.addText(part)
-                novo_p.addElement(LineBreak())
-            cell.addElement(novo_p)
 
+            novo_p = P(stylename=estilo_para_usar) if estilo_para_usar else P()
+            linhas = novo_texto.split("\n")
+            for i, part in enumerate(linhas):
+                novo_p.addText(part)
+                if i < len(linhas) - 1:
+                    novo_p.addElement(LineBreak())
+            cell.addElement(novo_p)
 # ------------ aplica modelo e salva ------------
 
 modelo = load("modelo_pernoite.odt")
