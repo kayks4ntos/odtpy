@@ -1,0 +1,62 @@
+Metadata-Version: 2.1
+Name: adfpy
+Version: 0.2.0
+Summary: A Pythonic wrapper for Azure Data Factory
+Home-page: https://github.com/danielvdende/adfpy
+License: Apache
+Keywords: azure,data,factory
+Author: Daniel van der Ende
+Author-email: daniel.vanderende@gmail.com
+Requires-Python: >=3.8,<4.0
+Classifier: License :: Other/Proprietary License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Provides-Extra: docs
+Requires-Dist: azure-identity (>=1.7.1,<2.0.0)
+Requires-Dist: azure-mgmt-datafactory (>=2.2.1,<2.7.0)
+Requires-Dist: click (>=8.1.3,<9.0.0)
+Project-URL: Repository, https://github.com/danielvdende/adfpy
+Description-Content-Type: text/markdown
+
+![tests](https://github.com/danielvdende/adfpy/actions/workflows/lint_test.yml/badge.svg)
+# 🏭🍰 adfPy
+adfPy aims to make developers lives easier by wrapping the Azure Data Factory Python SDK with an intuitive, powerful, and easy to use API that hopefully will remind people of working with Apache Airflow ;-). 
+
+## Install
+```shell
+pip install adfpy
+```
+
+## Usage
+Generally, using adfPy has 2 main components:
+1. Write your pipeline.
+2. Deploy your pipeline.
+
+adfPy has an opinionated syntax, which is heavily influenced by Airflow. For documentation on what the syntax looks like, please read the docs [here](https://danielvdende.github.io/adfpy/).
+Some examples are provided in the examples directory of this repository.
+
+
+Once you've written your pipelines, it's time to deploy them! For this, you can use adfPy's deployment script:
+```shell
+pip install adfpy
+adfpy-deploy --path <your_path_here>
+```
+Note:
+- This script will ensure all pipelines in the provided path are present in your target ADF.
+- This script will also **remove** any ADF pipelines that are **not** in your path, but are in ADF.
+
+## Still to come
+adfPy is still in development. As such, some ADF components are not yet supported:
+- Datasets
+- Linked services
+- Triggers (support for Schedule Triggers is available, but not for Tumbling Window, Custom Event, or Storage Event)
+
+## Developer setup
+adfPy is built with [Poetry](https://python-poetry.org/). To setup a development environment run:
+```shell
+poetry install
+```
+

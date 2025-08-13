@@ -1,11 +1,17 @@
+import sys
+from pathlib import Path
+
+# Adiciona a pasta 'libs' ao caminho de importação
+sys.path.insert(0, str(Path(__file__).parent / "libs"))
+
 from odf.opendocument import load
 from odf.text import P, LineBreak
 from odf.table import Table, TableRow, TableCell
 from odf.element import Element
+from odf.style import Style, ParagraphProperties
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
-from odf.style import Style, ParagraphProperties
 import re
 
 # ---------------- utilidades ----------------
@@ -14,12 +20,14 @@ def data_para_nome_br(d: datetime) -> str:
              "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"]
     return f"{d.day:02d} {meses[d.month]} {str(d.year)[-2:]}"
 
+
 def achar_arquivo_escala(pasta: str, data_ref: datetime) -> Path | None:
     padrao = re.compile(rf"ADT \d+ DE {re.escape(data_para_nome_br(data_ref))}\.odt$", re.I)
     for arq in Path(pasta).iterdir():
         if padrao.match(arq.name):
             return arq
     return None
+
 
 def extrair_texto(elem) -> str:
     txt = []
@@ -31,19 +39,16 @@ def extrair_texto(elem) -> str:
     return "".join(txt)
 
 # ------------ configuração de cargos ------------
-
 cargos_para_placeholder = {
     "SGT_DE_DIA"        : "SGT DE DIA",
     "CB_DE_DIA"         : "CB DE DIA SU",
     "PLANTAO_1"         : "PLANTÕES SU",
     "PLANTAO_2"         : "PLANTÕES SU",
     "PLANTAO_3"         : "PLANTÕES SU",
-
     "MOTORISTA"         : "MOTORISTA DE DIA",
     "PERMANENCIA_ENFER" : "PERMANÊNCIA ENFERMARIA",
     "SENTINELA_1"       : "GDA QTL 02",
     "SENTINELA_2"       : "GDA QTL 02",
-
     "OFICIAL_DE_DIA"    : "OFICIAL DE DIA",
     "ADJUNTO"           : "ADJUNTO",
     "CMT_GDA"           : "CMT DA GDA",
@@ -52,16 +57,15 @@ cargos_para_placeholder = {
 }
 
 # ------------ coleta de nomes da escala ------------
-
-hoje  = datetime.today()
+hoje = datetime.today()
 ontem = hoje - timedelta(days=1)
 
-arqADT = achar_arquivo_escala("escalas", ontem)
+pasta_adt = r"C:\Users\Sgte-CCAP\Desktop\Sargenteação 2025\01 - ADT 2025\07 JULHO 25"
+arqADT = achar_arquivo_escala(pasta_adt, ontem)
 if not arqADT:
     raise FileNotFoundError("❌ Escala não encontrada na pasta 'escalas'.")
 
 docADT = load(arqADT)
-
 nomes_por_funcao = defaultdict(list)
 
 for tabela in docADT.getElementsByType(Table):
@@ -70,53 +74,46 @@ for tabela in docADT.getElementsByType(Table):
         if not celulas:
             continue
         cargo_txt = extrair_texto(celulas[0]).strip().upper()
+        print(f"Cargo identificado: '{cargo_txt}'")
         for chave, nome_cargo in cargos_para_placeholder.items():
             if cargo_txt == nome_cargo.upper():
+                nomes_extraidos = set()  # ← evita duplicatas
                 for cel in celulas[1:]:
                     nome = extrair_texto(cel).strip()
                     if nome:
-                        nomes_por_funcao[nome_cargo].append(nome)
+                        nomes_extraidos.add(nome)
+                nomes_por_funcao[nome_cargo].extend(nomes_extraidos)
 
 # ------------ monta mapa_funcoes -------------------
-
 mapa_funcoes = {}
 
 for chave, nome_cargo in cargos_para_placeholder.items():
     nomes = nomes_por_funcao.get(nome_cargo, [])
-    chaves_mesmo_cargo = [k for k,v in cargos_para_placeholder.items() if v == nome_cargo]
+    chaves_mesmo_cargo = [k for k, v in cargos_para_placeholder.items() if v == nome_cargo]
     idx = chaves_mesmo_cargo.index(chave) if chave in chaves_mesmo_cargo else 0
 
     if idx < len(nomes):
         nome_puro = nomes[idx].strip()
-        if chave == "PERMANENCIA_ENFER":
-            nome_puro = re.sub(r"^PERMAN[ÊE]NCIA ENFERMARIA[:\- ]*", "", nome_puro, flags=re.I).strip()
-
-        # Adiciona função explícita para sargentos externos
-        if chave == "ADJUNTO" and nome_puro:
-            nome_puro = f"ADJUNTO: {nome_puro}"
-        if chave == "CMT_GDA" and nome_puro:
-            nome_puro = f"CMT DA GUARDA: {nome_puro}"
-
-        mapa_funcoes[chave] = nome_puro
+        # Remove prefixo duplicado se estiver presente
+        prefixo = re.escape(nome_cargo)
+        nome_puro = re.sub(rf"^{prefixo}[:\- ]*", "", nome_puro, flags=re.I).strip()
+        mapa_funcoes[chave] = nome_puro if nome_puro else ""
     else:
         mapa_funcoes[chave] = ""
 
 # ------------ datas do documento -------------------
-
 mapa_funcoes["DATA_DE_HOJE"] = f"{hoje.day:02d}"
-mapa_funcoes["MES_DE_HJ"]    = data_para_nome_br(hoje).split()[1].capitalize().upper()
-mapa_funcoes["MES_DE_HJ_n"]  = data_para_nome_br(hoje).split()[1].capitalize()
+mapa_funcoes["MES_DE_HJ"] = data_para_nome_br(hoje).split()[1].upper()
+mapa_funcoes["MES_DE_HJ_n"] = data_para_nome_br(hoje).split()[1].capitalize()
 
 # ------------ placeholders vazios como "–" -----------
-
 for k in ["OFICIAL_DE_DIA", "ADJUNTO", "CMT_GDA", "CB_GDA_I", "CB_GDA_II"]:
     if not mapa_funcoes.get(k):
         mapa_funcoes[k] = "–"
 
 # ------------ formatação especial para CBs da GDA ------------
-
-cb_gda_i = mapa_funcoes["CB_GDA_I"]
-cb_gda_ii = mapa_funcoes["CB_GDA_II"]
+cb_gda_i = mapa_funcoes.get("CB_GDA_I", "–")
+cb_gda_ii = mapa_funcoes.get("CB_GDA_II", "–")
 
 cb_lines = []
 if cb_gda_i != "–":
@@ -127,11 +124,10 @@ if cb_gda_ii != "–":
 mapa_funcoes["CB_GUARNICAO"] = "\n  ".join(cb_lines) if cb_lines else "–"
 
 # ------------ Guarnição Interna ------------
-
 soma_internos = {
-    "SGT": 1 if mapa_funcoes["SGT_DE_DIA"] else 0,
-    "CB":  1 if mapa_funcoes["CB_DE_DIA"] else 0,
-    "SOLDADO": sum(1 for k in ["PLANTAO_1", "PLANTAO_2", "PLANTAO_3"] if mapa_funcoes.get(k))
+    "SGT": 1 if mapa_funcoes.get("SGT_DE_DIA", "–") != "–" else 0,
+    "CB":  1 if mapa_funcoes.get("CB_DE_DIA", "–") != "–" else 0,
+    "SOLDADO": sum(1 for k in ["PLANTAO_1", "PLANTAO_2", "PLANTAO_3"] if mapa_funcoes.get(k, "–") != "–")
 }
 mapa_funcoes["SOMA_SGT_INT"] = f"{soma_internos['SGT']:02d}"
 mapa_funcoes["SOMA_CB_INT"] = f"{soma_internos['CB']:02d}"
@@ -139,12 +135,11 @@ mapa_funcoes["SD_INT"] = f"{soma_internos['SOLDADO']:02d}"
 mapa_funcoes["SOMA_TOTAL_INT"] = f"{sum(soma_internos.values()):02d}"
 
 # ------------ Guarnição Externa ------------
-
 soma_externos = {
-    "OF": int(mapa_funcoes.get("OFICIAL_DE_DIA") not in ["", "–"]),
-    "SGT": sum(1 for k in ["ADJUNTO", "CMT_GDA"] if mapa_funcoes.get(k) not in ["", "–"]),
-    "CB": sum(1 for k in ["CB_GDA_I", "CB_GDA_II"] if mapa_funcoes.get(k) not in ["", "–"]),
-    "SOLDADO": sum(1 for k in ["MOTORISTA", "PERMANENCIA_ENFER", "SENTINELA_1", "SENTINELA_2"] if mapa_funcoes.get(k) not in ["", "–"])
+    "OF": int(mapa_funcoes.get("OFICIAL_DE_DIA", "–") != "–"),
+    "SGT": sum(1 for k in ["ADJUNTO", "CMT_GDA"] if mapa_funcoes.get(k, "–") != "–"),
+    "CB": sum(1 for k in ["CB_GDA_I", "CB_GDA_II"] if mapa_funcoes.get(k, "–") != "–"),
+    "SOLDADO": sum(1 for k in ["MOTORISTA", "PERMANENCIA_ENFER", "SENTINELA_1", "SENTINELA_2"] if mapa_funcoes.get(k, "–") != "–")
 }
 mapa_funcoes["SOMA_OF"] = f"{soma_externos['OF']:02d}"
 mapa_funcoes["SOMA_SGT"] = f"{soma_externos['SGT']:02d}"
@@ -153,38 +148,51 @@ mapa_funcoes["SD"] = f"{soma_externos['SOLDADO']:02d}"
 mapa_funcoes["SOMA_TOTAL"] = f"{sum(soma_externos.values()):02d}"
 
 # ------------ Total Geral ------------
-
 total_geral = sum(soma_internos.values()) + sum(soma_externos.values())
 mapa_funcoes["TOTAL_GERAL"] = f"{total_geral:02d}"
 
-# ------------ substituição de placeholders ------------
+# ------------ SARGENTOS_EXT ------------
+adjunto = mapa_funcoes["ADJUNTO"]
+cmt_gda = mapa_funcoes["CMT_GDA"]
 
+# Eliminar duplicações se forem iguais
+sgt_set = set()
+
+if adjunto != "–" and adjunto != "":
+    sgt_set.add(f"ADJUNTO: {adjunto}")
+if cmt_gda != "–" and cmt_gda != "":
+    sgt_set.add(f"CMT DA GUARDA: {cmt_gda}")
+
+# Convertendo para lista para manter consistência
+sgt_lines = list(sgt_set)
+
+# Para manter ordem preferencial: ADJUNTO primeiro
+sgt_lines.sort(key=lambda x: 0 if x.startswith("ADJUNTO") else 1)
+
+mapa_funcoes["SARGENTOS_EXT"] = "\n  ".join(sgt_lines) if sgt_lines else "–"
+
+
+# ------------ substituição de placeholders ------------
 def substituir_placeholders(doc, dados):
-    # Cria estilo centralizado para valores vazios (hífen)
     estilo_centralizado = Style(name="Centralizado", family="paragraph")
     estilo_centralizado.addElement(ParagraphProperties(textalign="center"))
     doc.styles.addElement(estilo_centralizado)
 
-    # Chaves que podem conter hífen e que devem ser centralizadas se for "–"
     chaves_para_centralizar_se_hifen = {
-        "OFICIAL_DE_DIA", "ADJUNTO", "CMT_GDA", "CB_GDA_I", "CB_GDA_II", "CB_GUARNICAO"
+        "OFICIAL_DE_DIA", "SARGENTOS_EXT", "CB_GUARNICAO"
     }
-
-    # Chaves que sempre devem ser centralizadas (valores numéricos como somas)
     chaves_somas = {
         "SOMA_SGT_INT", "SOMA_CB_INT", "SD_INT", "SOMA_TOTAL_INT",
-        "SOMA_OF", "SOMA_SGT", "SOMA_CB", "SD", "SOMA_TOTAL",
-        "TOTAL_GERAL"
+        "SOMA_OF", "SOMA_SGT", "SOMA_CB", "SD", "SOMA_TOTAL", "TOTAL_GERAL"
     }
 
-    # Substituição nos parágrafos comuns
     for p in doc.getElementsByType(P):
         texto = extrair_texto(p)
         if not texto:
             continue
         novo_texto = texto
         for k, v in dados.items():
-            v = v.strip().rstrip('-').strip()  # Remove hífen ao final se houver
+            v = v.strip().rstrip('-').strip()
             novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
         if novo_texto != texto:
             filhos = [child for child in p.childNodes if isinstance(child, Element)]
@@ -192,7 +200,6 @@ def substituir_placeholders(doc, dados):
                 p.removeChild(child)
             p.addText(novo_texto)
 
-    # Substituição nas células da tabela
     for cell in doc.getElementsByType(TableCell):
         texto = extrair_texto(cell)
         if not texto:
@@ -204,12 +211,8 @@ def substituir_placeholders(doc, dados):
             v = v.strip().rstrip('-').strip()
             if f"{{{{{k}}}}}" in novo_texto:
                 novo_texto = novo_texto.replace(f"{{{{{k}}}}}", v)
-
-                # Centraliza apenas se for valor "–" e a chave está nas permitidas
                 if v == "–" and k in chaves_para_centralizar_se_hifen:
                     estilo_para_usar = estilo_centralizado
-
-                # Sempre centraliza se for uma soma
                 elif k in chaves_somas:
                     estilo_para_usar = estilo_centralizado
 
@@ -219,19 +222,21 @@ def substituir_placeholders(doc, dados):
                 cell.removeChild(child)
 
             novo_p = P(stylename=estilo_para_usar) if estilo_para_usar else P()
-            linhas = novo_texto.split("\n")
-            for i, part in enumerate(linhas):
+            for i, part in enumerate(novo_texto.split("\n")):
                 novo_p.addText(part)
-                if i < len(linhas) - 1:
+                if i < len(novo_texto.split("\n")) - 1:
                     novo_p.addElement(LineBreak())
             cell.addElement(novo_p)
-# ------------ aplica modelo e salva ------------
 
+# ------------ aplica modelo e salva ------------
 modelo = load("modelo_pernoite.odt")
 substituir_placeholders(modelo, mapa_funcoes)
 
-Path("pernoites").mkdir(exist_ok=True)
-nome_saida = f"pernoite_{data_para_nome_br(hoje).replace(' ','_')}.odt"
-modelo.save(Path("pernoites") / nome_saida)
+pasta_saida = Path(r"C:\Users\Sgte-CCAP\Desktop\Sargenteação 2025\02 - PERNOITE 2025\07 JULHO 2025")
+pasta_saida.mkdir(parents=True, exist_ok=True)
 
-print("✅ Pernoite gerado em:", Path("pernoites") / nome_saida)
+nome_saida = f"pernoite_{data_para_nome_br(hoje).replace(' ', '_')}.odt"
+caminho_final = pasta_saida / nome_saida
+modelo.save(caminho_final)
+
+print("✅ Pernoite gerado em:", caminho_final)

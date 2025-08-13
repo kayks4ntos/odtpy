@@ -1,0 +1,3 @@
+[console_scripts]
+adfpy-deploy=adfpy.deploy:run_deployment
+
